@@ -26,8 +26,6 @@ var xorshift64starSeed = +seed;
 
 console.log("Original Seed:" + xorshift64starSeed);
 
-var planets = [];
-
 function random() {
     return xorshift64star();
 }
@@ -106,38 +104,6 @@ var Grid = function(arguments) {
     }
 }
 
-
-
-// var grid = new Grid({
-//     rectangle: (new Rectangle(20, 0, 200, 200)), 
-//     seed: getXorRandomWithSeed(convertCoordinateToSeed(20,0,seed))
-// });
-// grid.drawPlanets();
-
-// var grid2 = new Grid({
-//     rectangle: (new Rectangle(240, 0, 200, 200)),
-//     seed: getXorRandomWithSeed(convertCoordinateToSeed(20,0,seed))
-// });
-// grid2.drawPlanets();
-
-// var grid3 = new Grid({
-//     rectangle: (new Rectangle(460, 0, 200, 200)),
-//     seed: getXorRandomWithSeed(convertCoordinateToSeed(20,0,seed))
-// });
-// grid3.drawPlanets();
-
-// var grid4 = new Grid({
-//     rectangle: (new Rectangle(680, 0, 200, 200)),
-//     seed: getXorRandomWithSeed(convertCoordinateToSeed(20,0,seed))
-// });
-// grid4.drawPlanets();
-
-// var grid5 = new Grid({
-//     rectangle: (new Rectangle(900, 0, 200, 200)),
-//     seed: getXorRandomWithSeed(convertCoordinateToSeed(20,0,seed))
-// });
-// grid5.drawPlanets();
-
 var drawGridRects = function(num_rectangles_wide, num_rectangles_tall, boundingRect) {
     var width_per_rectangle = 200;
     var height_per_rectangle = 200;
@@ -159,41 +125,6 @@ var drawGridRects = function(num_rectangles_wide, num_rectangles_tall, boundingR
             grid5.drawPlanets();
 
         }
-    }
-}
-
-function drawPlanets() {
-    var it = 0;
-    while (it < planetsSize) {
-
-        var planet = new Path.Circle({
-            center: new Point(random(), random()) * view.size,
-            radius: (random() * 33) + 5,
-            strokeColor: '#737373',
-            strokeWidth: 1,
-            fillColor: '#333333'
-        });
-
-        var intersections = 0;
-        planets.forEach(function(entry) {
-
-            var intersections = planet.getIntersections(entry);
-
-            if (intersections.length > 0) {
-                planet.remove();
-            } else {
-                intersections++;
-            }
-        });
-
-        if (intersections == 0) {
-            planet.onClick = function(event) {
-                this.fillColor = 'red';
-                console.log("\ncenter:" + this.position + "\nbounds:" + this.bounds + "\n");
-            }
-            planets.push(planet);
-        }
-        it++;
     }
 }
 
