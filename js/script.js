@@ -40,19 +40,14 @@ function xorshift64star() {
 var planetsSize = Math.round(random() * 50);
 console.log("Galaxy size:" + planetsSize);
 
-setViewCenter(new Point(random() * 500, random() * 500));
 
-//Comment to see the planets
+setViewCenter(new Point(random() * 5000000, random() * 5000000));
+
 console.log("Initial location:" + view.center + '; bounds' + view.getBounds());
 
-// var pRandom = getRandomWithSeed(10000);
-// console.log("r:" + pRandom());
-
-// var xorRandom = getXorRandomWithSeed(10000);
-// console.log("r:" + xorRandom());
-
 var Grid = function(arguments) {
-    this.random = arguments.seed;
+
+    this.random = arguments.randomGenerator;
     
     this.rect = new paper.Path.Rectangle(arguments.rectangle);
 
@@ -70,7 +65,8 @@ var Grid = function(arguments) {
         var it = 0;
         while (it < this.planetsSize) {
 
-            var center = new Point(this.random()*200+this.rect.position.x-100, this.random()*200+this.rect.position.y-100);
+
+            var center = new Point(this.random()*this.rect.bounds.width+this.rect.position.x-100, this.random()*200+this.rect.position.y-100);
 
             var planet = new Path.Circle({
                 center: center,
@@ -105,32 +101,33 @@ var Grid = function(arguments) {
 }
 
 var drawGridRects = function(num_rectangles_wide, num_rectangles_tall, boundingRect) {
-    var width_per_rectangle = 200;
-    var height_per_rectangle = 200;
+    var width = 200;
+    var height = 200;
     for (var i = 0; i < num_rectangles_wide; i++) {
         for (var j = 0; j < num_rectangles_tall; j++) {
 
-            var x = boundingRect.left + i * width_per_rectangle;
-            var y = boundingRect.top + j * height_per_rectangle;
+            var x = boundingRect.left + i * width;
+            var y = boundingRect.top + j * height;
 
             var grid5 = new Grid({
-                rectangle: (new Rectangle(
-                x, 
-                y, 
-                width_per_rectangle, 
-                height_per_rectangle
-                )),
-                seed: getXorRandomWithSeed(convertCoordinateToSeed(x,y,seed))
+                rectangle: (new Rectangle(x, y, width, height)),
+                randomGenerator: getXorRandomWithSeed(convertCoordinateToSeed(x,y,seed))
             });
             grid5.drawPlanets();
-
         }
     }
 }
 
 
 drawGridRects(20, 20, view.bounds);
-//drawPlanets();
+
+var player = new Path.Circle({
+               center: view.center,
+               radius: 15,
+               strokeColor: '#737373',
+               strokeWidth: 1,
+               fillColor: 'red'
+           });
 
 var destination = view.center;
 var zoomLevel = initialZoom;
@@ -153,6 +150,9 @@ function onFrame() {
 //============================================== 
 function setViewCenter(newCenter) {
     view.center = newCenter
+    if (player != undefined ) {
+        player.position = newCenter    
+    }
 }
 
 function zoomIn() {
@@ -162,14 +162,12 @@ function zoomIn() {
 
 function zoomOut() {
     var newZoom = view.zoom - 0.1
-    if (newZoom < 1) {
-        newZoom = 1
+    if (newZoom <= 0) {
+        newZoom = 0.1
     }
     view.zoom = newZoom
     zoomLevel = view.zoom
 }
-
-
 
 
 //==============================================
@@ -177,6 +175,7 @@ function zoomOut() {
 //============================================== 
 function onMouseUp(event) {
     destination = event.point
+    player.position = event.point    
 }
 
 function onKeyDown(event) {
