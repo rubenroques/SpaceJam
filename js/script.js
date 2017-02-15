@@ -1,9 +1,15 @@
+
+console.log("Start");
+
+
 var seedRaw = getParameterByName('seed');
 var showGridRaw = getParameterByName('showGrid');
 var initialZoomRaw = getParameterByName('zoomLevel');
 
 var showGrid = true;
 var initialZoom = 2.6;
+
+var planetarySystems = [[]];
 
 if (seedRaw == undefined || seedRaw == '') {
     seedRaw = new Date().getTime();
@@ -26,6 +32,7 @@ var xorshift64starSeed = +seed;
 
 console.log("Original Seed:" + xorshift64starSeed);
 
+
 function random() {
     return xorshift64star();
 }
@@ -45,34 +52,51 @@ setViewCenter(new Point(random() * 5000000, random() * 5000000));
 
 console.log("Initial location:" + view.center + '; bounds' + view.getBounds());
 
-var Grid = function(arguments) {
 
+
+var Galaxy = function() {
+
+    this.planetarySystems = [[]];
     this.random = arguments.randomGenerator;
-    
-    this.rect = new paper.Path.Rectangle(arguments.rectangle);
 
-    if (showGrid) {
+    this.addPlanetarySystem = function(planetarySystem, x, y) {
+
+        this.planetarySystems[x][y] = planetarySystem;
+    }
+}
+
+var PlanetarySystem = function(arguments) {
+
+    this.detailLevel = 1000;
+    this.showGrid = arguments.showGrid; 
+    this.random = arguments.randomGenerator;
+    this.rect = new paper.Path.Rectangle(arguments.rectangle);
+    this.rect.strokeWidth = 3;
+    if (this.showGrid) {
         this.rect.strokeColor = '#3f3f3f';
     }
-    this.rect.strokeWidth = 3;
+    
 
-    this.planetsSize = Math.round( this.random() * 10);
-    this.planetsColor = new Color( this.random(),this.random(),this.random());
+    this.planetsSize = Math.round(this.random() * (this.rect.bounds.width*0.030));
+    this.planetsColor = new Color(this.random(),this.random(),this.random());
     this.planets = [];
+
+    this.center = {'x': 0,'y': 0};
+    
 
     this.drawPlanets = function() {
         console.log("planets to draw:" + this.planetsSize);
         var it = 0;
         while (it < this.planetsSize) {
 
-
-            var center = new Point(this.random()*this.rect.bounds.width+this.rect.position.x-100, this.random()*200+this.rect.position.y-100);
-
+            var x = this.random()*this.rect.bounds.width+this.rect.position.x-(this.rect.bounds.width/2);
+            var y = this.random()*this.rect.bounds.height+this.rect.position.y-(this.rect.bounds.height/2);
+            var center = new Point(x, y);
             var planet = new Path.Circle({
                 center: center,
-                radius: (this.random() * 14)+2,
+                radius: (this.random() * (this.rect.bounds.height*0.09))+(this.rect.bounds.height*0.005),
                 strokeColor: '#737373',
-                strokeWidth: 1,
+                strokeWidth: 0.5,
                 fillColor: this.planetsColor
             });
 
@@ -100,32 +124,47 @@ var Grid = function(arguments) {
     }
 }
 
-var drawGridRects = function(num_rectangles_wide, num_rectangles_tall, boundingRect) {
-    var width = 200;
-    var height = 200;
+var drawPlanetarySystem = function(galaxy, num_rectangles_wide, num_rectangles_tall, boundingRect) {
+    var width = 400;
+    var height = 400;
     for (var i = 0; i < num_rectangles_wide; i++) {
         for (var j = 0; j < num_rectangles_tall; j++) {
 
             var x = boundingRect.left + i * width;
             var y = boundingRect.top + j * height;
 
-            var grid5 = new Grid({
+            var planetarySystem = new PlanetarySystem({
                 rectangle: (new Rectangle(x, y, width, height)),
-                randomGenerator: getXorRandomWithSeed(convertCoordinateToSeed(x,y,seed))
+                randomGenerator: getXorRandomWithSeed(convertCoordinateToSeed(x,y,seed)),
+                showGrid:showGrid
             });
-            grid5.drawPlanets();
+            planetarySystem.drawPlanets();
+
+            planetarySystems.push(planetarySystem);
         }
     }
 }
 
 
-drawGridRects(20, 20, view.bounds);
+
+
+//  [][][][][][][][][]
+//  [] 1 1 1 1 1 1 1[]
+//  [] 1 2 2 2 2 2 1[]
+//  [] 1 2 3 X 3 2 1[]
+//  [] 1 2 2 2 2 2 1[]
+//  [] 1 1 1 1 1 1 1[]
+//  [][][][][][][][][]
+
+var galaxy1 = new Galaxy()
+
+drawPlanetarySystem(galaxy1, 5, 5, view.bounds);
 
 var player = new Path.Circle({
                center: view.center,
-               radius: 15,
+               radius: 5,
                strokeColor: '#737373',
-               strokeWidth: 1,
+               strokeWidth: 0.5,
                fillColor: 'red'
            });
 
@@ -133,6 +172,15 @@ var destination = view.center;
 var zoomLevel = initialZoom;
 view.zoom = zoomLevel;
 
+
+function checkIfNeedToDraw(){
+
+    return true
+}
+
+function getPlanetarySystem(galaxy, x, y){
+
+}
 
 //==============================================
 //=========   View Helper Functions    =========
@@ -175,11 +223,10 @@ function zoomOut() {
 //============================================== 
 function onMouseUp(event) {
     destination = event.point
-    player.position = event.point    
 }
 
 function onKeyDown(event) {
-    var translationSize = 60;
+    var translationSize = 9;
     if (event.key == 'space') {
         destination = new Point(0, 0);
     }

@@ -17,7 +17,7 @@ function getRandomWithSeed(argSeed) {
     
     var result = seed / 0xAFFFFFFF;
 	
-	return result;
+  return result;
   }
 }
 
