@@ -346,6 +346,7 @@ function checkCollisions() {
                 if (!collected[en.e.id] && dist(lx, ly, en.e.x, en.e.y) < ENERGY_RADIUS) {
                     collected[en.e.id] = true;
                     en.item.remove();
+                    soundPickup(sec.data.region);
                     score += 10;
                     fuel = Math.min(100, fuel + 25);
                     if (score > best) { best = score; saveBest(best); }
@@ -358,6 +359,7 @@ function checkCollisions() {
 function endRun() {
     dead = true;
     flame.visible = false;
+    soundCrash();
     for (var k = 0; k < 28; k++) {
         emitSpark(pos - origin, new Point({ angle: k * 360 / 28, length: 40 + Math.random() * 90 }));
     }
@@ -381,7 +383,9 @@ function restart() {
 //==========     User Interaction     ==========
 //==============================================
 function onKeyDown(event) {
+    unlockAudio();
     keysPressed[event.key] = true;
+    if (event.key == 'm') toggleSound();
     if (event.key == 'r' && dead) restart();
     if (event.key == '+') view.zoom = view.zoom + 0.1;
     if (event.key == '-') view.zoom = Math.max(MIN_ZOOM, view.zoom - 0.1);

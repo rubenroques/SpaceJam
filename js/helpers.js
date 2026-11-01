@@ -207,6 +207,41 @@ function shipDesign(pilot) {
     };
 }
 
+// ---- Sound (ZzFX, loaded from the CDN in index.html; the page works without it) ----
+// Each region has its own note: the hue picks a step of a pentatonic scale.
+var PENTATONIC = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26];
+var soundOn = true;
+
+function regionNote(region) {
+    return 220 * Math.pow(2, PENTATONIC[Math.floor(region.hue / 30) % 12] / 12);
+}
+function regionShape(region) { return region.density > 0.6 ? 1 : 0; }   // triangle or sine
+
+function playSound(params) {
+    try {
+        if (soundOn && typeof zzfx === 'function' && zzfxX.state == 'running') zzfx.apply(null, params);
+    } catch (e) {}
+}
+// Browsers start audio only after a user action. Call this from a key handler.
+function unlockAudio() {
+    try { if (typeof zzfxX !== 'undefined' && zzfxX.state != 'running') zzfxX.resume(); } catch (e) {}
+}
+function toggleSound() { soundOn = !soundOn; return soundOn; }
+
+// ZzFX parameters: volume, randomness, frequency, attack, sustain, release, shape,
+// shapeCurve, slide, deltaSlide, pitchJump, pitchJumpTime, repeatTime, noise,
+// modulation, bitCrush, delay, ...
+function soundPickup(region) {
+    var f = regionNote(region);
+    playSound([0.5, 0, f * 2, 0.005, 0.04, 0.2, regionShape(region), 1.5, 0, 0, f * 2, 0.05]);
+}
+function soundRegion(region) {
+    playSound([0.3, 0, regionNote(region), 0.25, 0.3, 1.4, regionShape(region), 1, 0, 0, 0, 0, 0, 0, 0, 0, 0.12]);
+}
+function soundCrash() {
+    playSound([0.9, 0.1, 70, 0.005, 0.15, 0.7, 4, 1.5, -1, 0, 0, 0, 0, 1.2, 0, 0.4]);
+}
+
 // ---- Browser storage (wrapped: it can be blocked) ----
 function randomPilotId() { return Math.random().toString(36).slice(2, 10); }
 function loadPilot() {
@@ -270,6 +305,7 @@ function setText(id, text) {
 }
 // Region change: name in the HUD, a banner, and the background takes the region's tone.
 function showRegion(region) {
+    soundRegion(region);
     setText('region', region.name);
     document.body.style.backgroundColor = 'hsl(' + Math.round(region.hue) + ', 45%, 6%)';
     var b = document.getElementById('banner');
