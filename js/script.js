@@ -41,21 +41,37 @@ var regionId = null;     // region of the ship's sector, for the "Entering" bann
 var keysPressed = {};
 
 var worldLayer = project.activeLayer;
+var fxLayer = new Layer();     // sparks, between the world and the ship
 var shipLayer = new Layer();
-worldLayer.activate();
 
+// The ship: generated from the pilot id (helpers.js shipDesign).
 // applyMatrix: false, so `rotation` is an absolute angle and does not accumulate.
 // pivot [0, 0], so `position` is the hull origin and not the centre of the rotated bounds.
-var player = new Path({
-    segments: [[9, 0], [-6, -6], [-3, 0], [-6, 6]],
-    closed: true,
-    fillColor: '#7df',
-    strokeColor: 'white',
-    strokeWidth: 1,
+var design = shipDesign(pilot);
+var flameColor = hsb(design.flameHue, 0.85, 1);
+var flame = new Path({
+    segments: [[design.tail + 1, -2.6], [design.tail - 8, 0], [design.tail + 1, 2.6]],
+    closed: true, fillColor: flameColor, applyMatrix: false, pivot: [design.tail, 0], visible: false
+});
+var player = new Group({
+    children: [
+        flame,
+        new Path({ segments: design.points, closed: true, fillColor: hsb(design.hue, 0.45, 0.95), strokeColor: 'white', strokeWidth: 0.8 }),
+        new Path.Ellipse({ center: [design.cockpitAt, 0], size: [5, 3], fillColor: hsb(design.hue, 0.6, 0.35) })
+    ],
     applyMatrix: false,
     pivot: [0, 0]
 });
 shipLayer.addChild(player);
+
+// Spark pool for the engine trail and the crash burst. Positions are local (origin-relative).
+var sparks = [], nextSpark = 0;
+for (var i = 0; i < 64; i++) {
+    var dot = new Path.Circle({ center: [0, 0], radius: 1.6, fillColor: flameColor, applyMatrix: false, visible: false });
+    fxLayer.addChild(dot);
+    sparks.push({ item: dot, life: 0, vel: new Point(0, 0) });
+}
+worldLayer.activate();
 
 updateSectors();
 placeShip();
@@ -75,7 +91,13 @@ function onFrame(event) {
         }
         velocity = velocity * Math.max(0, 1 - 0.35 * dt);
         if (velocity.length > 320) velocity = velocity.normalize(320);
-        player.fillColor = thrusting ? '#fd6' : '#7df';
+        flame.visible = thrusting;
+        if (thrusting) {
+            flame.scaling = new Point(0.7 + 0.3 * Math.abs(Math.sin(event.time * 37)), 1);
+            var back = new Point({ angle: heading + 180, length: 1 });
+            var spread = new Point({ angle: heading + 90, length: (Math.random() - 0.5) * 30 });
+            emitSpark(pos - origin + back * -design.tail, velocity * 0.4 + back * 70 + spread);
+        }
         pos = pos + velocity * dt;
         var local = pos - origin;
         if (Math.abs(local.x) > REBASE_DISTANCE || Math.abs(local.y) > REBASE_DISTANCE) {
@@ -86,6 +108,7 @@ function onFrame(event) {
         if (fuel <= 0 && velocity.length < 8) endRun();
     }
     placeShip();
+    updateSparks(dt);
     animate(STILL ? 0 : event.time);
     setStarOffset(pos.x, pos.y);
     updateHud(score, best, Math.round(fuel));
@@ -107,7 +130,36 @@ function setOrigin(newOrigin) {
     if (back.isZero()) return;
     origin = newOrigin;
     Object.keys(sectors).forEach(function(k) { sectors[k].group.translate(back); });
+    sparks.forEach(function(s) { s.item.position = s.item.position + back; });
     placeShip();
+}
+
+//==============================================
+//=========           Sparks           =========
+//==============================================
+// Sparks are effects only, so they may use Math.random.
+function emitSpark(at, vel) {
+    var s = sparks[nextSpark];
+    nextSpark = (nextSpark + 1) % sparks.length;
+    s.item.position = at;
+    s.vel = vel;
+    s.life = 1;
+    s.item.visible = true;
+}
+
+function updateSparks(dt) {
+    sparks.forEach(function(s) {
+        if (s.life <= 0) return;
+        s.life -= dt * 1.8;
+        if (s.life <= 0) { s.item.visible = false; return; }
+        s.item.position = s.item.position + s.vel * dt;
+        s.item.opacity = s.life;
+        s.item.scaling = 0.4 + 0.6 * s.life;
+    });
+}
+
+function clearSparks() {
+    sparks.forEach(function(s) { s.life = 0; s.item.visible = false; });
 }
 
 //==============================================
@@ -305,6 +357,10 @@ function checkCollisions() {
 
 function endRun() {
     dead = true;
+    flame.visible = false;
+    for (var k = 0; k < 28; k++) {
+        emitSpark(pos - origin, new Point({ angle: k * 360 / 28, length: 40 + Math.random() * 90 }));
+    }
     showGameOver(true);
 }
 
@@ -315,6 +371,7 @@ function restart() {
     pos = new Point(spawn.x, spawn.y);
     origin = sectorCorner(spawn.x, spawn.y);
     regionId = null;
+    clearSparks();
     updateSectors();
     placeShip();
     showGameOver(false);

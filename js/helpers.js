@@ -182,6 +182,31 @@ function findSpawn(universe, home) {
     return { x: home.x * SECTOR_SIZE + c, y: home.y * SECTOR_SIZE + c };
 }
 
+// ---- Ship ----
+// The ship belongs to the pilot (same ship in every universe). Nose points to +x.
+// The hull is mirrored on the x axis; x goes down from nose to tail, so it never crosses itself.
+function shipDesign(pilot) {
+    var r = new Math.seedrandom('ship:' + pilot);
+    var len = 15 + r() * 6;
+    var nose = len * 0.55, tail = -len * 0.45;
+    var n = 2 + Math.floor(r() * 2);
+    var upper = [];
+    for (var i = 1; i <= n; i++) {
+        var x = nose - (nose - tail) * (i / (n + 1)) + (r() - 0.5) * 2;
+        upper.push([x, -(2.5 + r() * 5.5)]);
+    }
+    var tailHalf = 2 + r() * 4.5, notch = r() * 4;
+    var points = [[nose, 0]].concat(upper, [[tail, -tailHalf], [tail + notch, 0], [tail, tailHalf]],
+        upper.slice().reverse().map(function (p) { return [p[0], -p[1]]; }));
+    return {
+        points: points,
+        tail: tail + notch,
+        hue: r() * 360,
+        flameHue: 15 + r() * 45,
+        cockpitAt: nose * 0.35
+    };
+}
+
 // ---- Browser storage (wrapped: it can be blocked) ----
 function randomPilotId() { return Math.random().toString(36).slice(2, 10); }
 function loadPilot() {
