@@ -147,11 +147,15 @@ function sectorData(universe, sx, sy) {
     return { region: region, planets: planets, energy: energy };
 }
 
+// Sector coordinates stay within int32 for hash2 (Math.imul) and keep doubles precise.
+var MAX_SECTOR = 1000000000;
+function clampSector(v) { return isFinite(v) ? Math.max(-MAX_SECTOR, Math.min(MAX_SECTOR, v)) : 0; }
+
 // The pilot's home sector: from ?at=sx,sy, or from the pilot id.
 function homeSector(universe, pilot, at) {
     if (at) {
         var parts = at.split(',');
-        return { x: Math.floor(+parts[0]) || 0, y: Math.floor(+parts[1]) || 0 };
+        return { x: clampSector(Math.floor(+parts[0])), y: clampSector(Math.floor(+parts[1])) };
     }
     var r = new Math.seedrandom(universe + ':spawn:' + pilot);
     return {

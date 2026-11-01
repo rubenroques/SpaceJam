@@ -10,9 +10,9 @@
 var UNIVERSE = getParameterByName('universe') || getParameterByName('seed') || 'spacejam-1';
 var showGrid = getParameterByName('showGrid') == 'true';
 var STILL = getParameterByName('still') == '1';   // tests: freeze moons and pulses
-var MIN_ZOOM = 0.6;
-var zoomParam = getParameterByName('zoomLevel');
-view.zoom = zoomParam ? Math.max(MIN_ZOOM, +zoomParam) : 1.2;
+var MIN_ZOOM = 0.6, MAX_ZOOM = 6;
+var zoomParam = +getParameterByName('zoomLevel');
+view.zoom = zoomParam > 0 && isFinite(zoomParam) ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomParam)) : 1.2;
 
 var SHIP_RADIUS = 6;
 var ENERGY_RADIUS = 14;   // pickup distance
@@ -95,18 +95,24 @@ function onFrame(event) {
         if (thrusting) {
             flame.scaling = new Point(0.7 + 0.3 * Math.abs(Math.sin(event.time * 37)), 1);
             var back = new Point({ angle: heading + 180, length: 1 });
-            var spread = new Point({ angle: heading + 90, length: (Math.random() - 0.5) * 30 });
+            // A negative `length` would be made positive, so scale a unit vector instead.
+            var spread = new Point({ angle: heading + 90, length: 1 }) * ((Math.random() - 0.5) * 30);
             emitSpark(pos - origin + back * -design.tail, velocity * 0.4 + back * 70 + spread);
         }
-        pos = pos + velocity * dt;
+        // Move in steps of at most 6 units, so a fast ship cannot jump over a small planet.
+        var steps = Math.max(1, Math.ceil(velocity.length * dt / 6));
+        for (var k = 0; k < steps && !dead; k++) {
+            pos = pos + velocity * (dt / steps);
+            updateSectors();
+            checkCollisions();
+        }
         var local = pos - origin;
         if (Math.abs(local.x) > REBASE_DISTANCE || Math.abs(local.y) > REBASE_DISTANCE) {
             setOrigin(sectorCorner(pos.x, pos.y));
         }
-        updateSectors();
-        checkCollisions();
-        if (fuel <= 0 && velocity.length < 8) endRun();
+        if (!dead && fuel <= 0 && velocity.length < 8) endRun();
     }
+    updateSectors();   // also while dead: the zoom or the window size can change
     placeShip();
     updateSparks(dt);
     animate(STILL ? 0 : event.time);
@@ -357,6 +363,7 @@ function checkCollisions() {
 }
 
 function endRun() {
+    if (dead) return;
     dead = true;
     flame.visible = false;
     soundCrash();
@@ -383,6 +390,8 @@ function restart() {
 //==========     User Interaction     ==========
 //==============================================
 function onKeyDown(event) {
+    // Leave browser shortcuts (Cmd+M, Cmd+L, Ctrl+R, ...) to the browser.
+    if (event.modifiers.command || event.modifiers.control || event.modifiers.alt) return;
     unlockAudio();
     keysPressed[event.key] = true;
     if (event.key == 'm') toggleSound();
@@ -391,7 +400,7 @@ function onKeyDown(event) {
         copyPlaceLink(UNIVERSE, here.x, here.y);
     }
     if (event.key == 'r' && dead) restart();
-    if (event.key == '+') view.zoom = view.zoom + 0.1;
+    if (event.key == '+') view.zoom = Math.min(MAX_ZOOM, view.zoom + 0.1);
     if (event.key == '-') view.zoom = Math.max(MIN_ZOOM, view.zoom - 0.1);
 }
 
