@@ -3,9 +3,13 @@
 <head>
 
 <style type="text/css">
-html,
+html { background: #02030a; height: 100%; }
 body {
-	background: black;
+	background-color: #02030a;
+	background-image: radial-gradient(1px 1px at 20px 30px, #fff, transparent), radial-gradient(1px 1px at 130px 90px, #99a, transparent), radial-gradient(1px 1px at 200px 170px, #fff, transparent),
+		radial-gradient(2px 2px at 60px 220px, #ccf, transparent), radial-gradient(2px 2px at 260px 60px, #ffe, transparent);
+	background-size: 240px 240px, 240px 240px, 240px 240px, 330px 330px, 330px 330px;
+	font-family: monospace; color: #cde;
     margin: 0;
     overflow: hidden;
     height: 100%;
@@ -13,10 +17,19 @@ body {
 
 /* Scale canvas with resize attribute to full size */
 canvas[resize] {
-	background: black;
+	background: transparent;
     width: 100%;
     height: 100%;
 }
+#hud { position: fixed; top: 12px; left: 16px; font-size: 16px; pointer-events: none; }
+#hud span { margin-right: 18px; }
+#fuelbar { width: 160px; height: 8px; border: 1px solid #567; margin-top: 6px; }
+#fuel { height: 100%; width: 100%; background: #fc5; }
+#over { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 32px; pointer-events: none; }
+#over[hidden] { display: none; }
+#flash { position: fixed; inset: 0; background: #f33; opacity: 0; pointer-events: none; transition: opacity 0.6s; }
+.shake { animation: shake 0.4s; }
+@keyframes shake { 20% { transform: translate(-8px, 6px); } 40% { transform: translate(7px, -5px); } 60% { transform: translate(-5px, -4px); } 80% { transform: translate(4px, 5px); } }
 </style>
 
 <!-- Load the Paper.js library -->
@@ -34,7 +47,10 @@ canvas[resize] {
 </head>
 <body>
 
-<canvas id="myCanvas" style="border: 2px dotted red;" resize="true"></canvas>
+<canvas id="myCanvas" resize="true"></canvas>
+<div id="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><div id="fuelbar"><div id="fuel"></div></div></div>
+<div id="over" hidden>GAME OVER<br><small>press R to restart</small></div>
+<div id="flash"></div>
 
 </body>
 </html>

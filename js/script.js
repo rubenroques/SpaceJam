@@ -6,7 +6,7 @@ var seedRaw = getParameterByName('seed');
 var showGridRaw = getParameterByName('showGrid');
 var initialZoomRaw = getParameterByName('zoomLevel');
 
-var showGrid = true;
+var showGrid = false;
 var initialZoom = 2.6;
 
 // Dynamic sector storage - use object with "x,y" keys for infinite map
@@ -128,20 +128,31 @@ var PlanetarySystem = function(arguments) {
 //  [] 1 1 1 1 1 1 1[]
 //  [][][][][][][][][]
 
+// Game state. Declared before the first updateVisibleSectors call, because generateSector reads `collected`.
+var startCenter = view.center;
+var velocity = new Point(0, 0);
+var heading = -90;
+var fuel = 100, score = 0, best = loadBest(), dead = false;
+var collected = {};
+var SHIP_RADIUS = 6;
+
 var galaxy1 = new Galaxy()
 
 // Initialize sectors around starting position
 updateVisibleSectors(view.center.x, view.center.y);
+clearSpawn();
 
-var player = new Path.Circle({
-    center: view.center,
-    radius: 5,
-    strokeColor: '#737373',
-    strokeWidth: 0.5,
-    fillColor: 'red'
+// applyMatrix: false, so `rotation` is an absolute angle and does not accumulate.
+var player = new Path({
+    segments: [[9, 0], [-6, -6], [-3, 0], [-6, 6]],
+    closed: true,
+    fillColor: '#7df',
+    strokeColor: 'white',
+    strokeWidth: 1,
+    applyMatrix: false
 });
-
-var destination = view.center;
+player.position = view.center;
+player.rotation = heading;
 var zoomLevel = initialZoom;
 view.zoom = zoomLevel;
 
@@ -162,38 +173,80 @@ function getPlanetarySystem(galaxy, x, y){
 //=========   View Helper Functions    =========
 //============================================== 
 
-function onFrame() {
-    // Handle continuous movement based on pressed keys
-    var movementSpeed = 2;
-    var deltaX = 0;
-    var deltaY = 0;
-    
-    // Check for movement keys (arrow keys and WASD)
-    if (keysPressed['up'] || keysPressed['w']) deltaY -= movementSpeed;
-    if (keysPressed['down'] || keysPressed['s']) deltaY += movementSpeed;
-    if (keysPressed['left'] || keysPressed['a']) deltaX -= movementSpeed;
-    if (keysPressed['right'] || keysPressed['d']) deltaX += movementSpeed;
-    
-    // Apply movement if any keys are pressed
-    if (deltaX !== 0 || deltaY !== 0) {
-        destination = new Point(destination.x + deltaX, destination.y + deltaY);
+function onFrame(event) {
+    var dt = Math.min(event.delta, 0.05);
+    if (!dead) {
+        if (keysPressed['left'] || keysPressed['a']) heading -= 220 * dt;
+        if (keysPressed['right'] || keysPressed['d']) heading += 220 * dt;
+        var thrusting = (keysPressed['up'] || keysPressed['w']) && fuel > 0;
+        if (thrusting) {
+            velocity = velocity + new Point({ angle: heading, length: 260 * dt });
+            fuel -= 12 * dt;
+        }
+        velocity = velocity * Math.max(0, 1 - 0.35 * dt);
+        if (velocity.length > 320) velocity = velocity.normalize(320);
+        player.rotation = heading;
+        player.fillColor = thrusting ? '#fd6' : '#7df';
+        setViewCenter(view.center + velocity * dt);
+        updateVisibleSectors(view.center.x, view.center.y);
+        checkCollisions();
+        if (fuel <= 0 && velocity.length < 8) endRun();
     }
-    
-    // Smooth movement to destination with consistent speed
-    var vector = destination - view.center;
-    var distance = vector.length;
-    
-    if (distance > movementSpeed) {
-        // Move at consistent speed towards destination
-        var direction = vector.normalize();
-        setViewCenter(view.center + (direction * movementSpeed));
-    } else if (distance > 0.1) {
-        // Close to destination, move directly there
-        setViewCenter(destination);
+    setStarOffset(view.center.x, view.center.y);
+    updateHud(score, best, Math.round(fuel));
+}
+
+function hitPlanet(planets, pos, margin) {
+    // this.planets also holds planets that drawPlanets removed (see CLAUDE.md), so skip them.
+    for (var i = 0; i < planets.length; i++) {
+        var p = planets[i];
+        if (p.isInserted() && pos.getDistance(p.position) < p.bounds.width / 2 + margin) return p;
     }
-    
-    // Update sectors around player position for infinite map
-    updateVisibleSectors(view.center.x, view.center.y);
+    return null;
+}
+
+function checkCollisions() {
+    var pos = player.position;
+    var s = getSectorCoords(pos.x, pos.y);
+    for (var dx = -1; dx <= 1; dx++) {
+        for (var dy = -1; dy <= 1; dy++) {
+            var sector = activeSectors[getSectorKey(s.x + dx, s.y + dy)];
+            if (!sector) continue;
+            if (hitPlanet(sector.system.planets, pos, SHIP_RADIUS)) { endRun(); return; }
+            sector.pickups.forEach(function(e) {
+                if (e.isInserted() && pos.getDistance(e.position) < 14) {
+                    e.remove();
+                    collected[e.data.id] = true;
+                    score += 10;
+                    fuel = Math.min(100, fuel + 25);
+                    if (score > best) { best = score; saveBest(best); }
+                }
+            });
+        }
+    }
+}
+
+// Remove planets on top of the start point, so a run never starts inside a planet.
+function clearSpawn() {
+    Object.keys(activeSectors).forEach(function(k) {
+        var hit;
+        while ((hit = hitPlanet(activeSectors[k].system.planets, startCenter, 60))) hit.remove();
+    });
+}
+
+function endRun() {
+    dead = true;
+    showGameOver(true);
+}
+
+function restart() {
+    unloadDistantSectors(Infinity, Infinity); // every sector is "too far": unload all
+    collected = {}; score = 0; fuel = 100; heading = -90; dead = false;
+    velocity = new Point(0, 0);
+    setViewCenter(startCenter);
+    updateVisibleSectors(startCenter.x, startCenter.y);
+    clearSpawn();
+    showGameOver(false);
 }
 
 
@@ -226,27 +279,11 @@ function zoomOut() {
 //==============================================
 //==========     User Interaction     ==========
 //============================================== 
-function onMouseUp(event) {
-    destination = event.point
-}
-
 function onKeyDown(event) {
-    // Mark keys as pressed for continuous movement
     keysPressed[event.key] = true;
-    
-    // Handle special keys
-    if (event.key == 'space') {
-        destination = new Point(0, 0);
-    }
-    if (event.key == 'c') {
-        destination = view.center; // Center on current position
-    }
-    if (event.key == '+') {
-        zoomIn();
-    }
-    if (event.key == '-') {
-        zoomOut();
-    }
+    if (event.key == 'r' && dead) restart();
+    if (event.key == '+') zoomIn();
+    if (event.key == '-') zoomOut();
 }
 
 function onKeyUp(event) {
@@ -297,8 +334,21 @@ function generateSector(sectorX, sectorY) {
         showGrid: showGrid
     });
     planetarySystem.drawPlanets();
-    
+
+    // 0-2 energy pickups. Same sector RNG, used after the planets, so the planet layout does not change.
+    var pickups = [];
+    var count = Math.floor(planetarySystem.random() * 3);
+    for (var i = 0; i < count; i++) {
+        var at = new Point(worldX + planetarySystem.random() * SECTOR_SIZE, worldY + planetarySystem.random() * SECTOR_SIZE);
+        var id = key + ':' + i;
+        if (collected[id] || hitPlanet(planetarySystem.planets, at, 12)) continue;
+        var e = new Path.Circle({ center: at, radius: 4, fillColor: '#6f9', shadowColor: '#6f9', shadowBlur: 14 });
+        e.data.id = id;
+        pickups.push(e);
+    }
+
     activeSectors[key] = {
+        pickups: pickups,
         system: planetarySystem,
         sectorX: sectorX,
         sectorY: sectorY
@@ -318,6 +368,7 @@ function unloadDistantSectors(playerSectorX, playerSectorY) {
             sector.system.planets.forEach(function(planet) {
                 planet.remove();
             });
+            sector.pickups.forEach(function(e) { e.remove(); });
             if (sector.system.rect) {
                 sector.system.rect.remove();
             }
