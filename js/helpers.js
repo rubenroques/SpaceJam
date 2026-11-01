@@ -312,6 +312,16 @@ function showRegion(region) {
     b.textContent = 'Entering ' + region.name;
     b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
 }
+// A link that starts the game in this universe, at this sector. Same place for everybody.
+function copyPlaceLink(universe, sx, sy) {
+    var url = location.origin + location.pathname + '?universe=' + encodeURIComponent(universe) + '&at=' + sx + ',' + sy;
+    var b = document.getElementById('banner');
+    var done = function (text) { b.textContent = text; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); };
+    try {
+        navigator.clipboard.writeText(url).then(function () { done('Link copied: sector ' + sx + ', ' + sy); },
+                                                function () { done(url); });
+    } catch (e) { done(url); }
+}
 function updateHud(score, best, fuel) {
     setText('score', String(score));
     setText('best', String(best));

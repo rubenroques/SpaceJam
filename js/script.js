@@ -386,6 +386,10 @@ function onKeyDown(event) {
     unlockAudio();
     keysPressed[event.key] = true;
     if (event.key == 'm') toggleSound();
+    if (event.key == 'l') {
+        var here = sectorOf(pos.x, pos.y);
+        copyPlaceLink(UNIVERSE, here.x, here.y);
+    }
     if (event.key == 'r' && dead) restart();
     if (event.key == '+') view.zoom = view.zoom + 0.1;
     if (event.key == '-') view.zoom = Math.max(MIN_ZOOM, view.zoom - 0.1);
