@@ -100,6 +100,7 @@ function regionInfo(universe, gx, gy) {
     };
     var kind = density < 0.2 ? 'Void' : density > 0.85 ? 'Cluster' : pick(r, ['Reach', 'Expanse', 'Drift', 'Belt', 'Deep']);
     region.name = makeName(streamFor(universe, 'name', gx, gy)) + ' ' + kind;
+    region.light = r() * 360;            // direction of the light on the planets, in degrees
     if (Object.keys(regionCache).length > 500) regionCache = {};
     regionCache[key] = region;
     return region;

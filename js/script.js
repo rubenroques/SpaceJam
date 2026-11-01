@@ -9,6 +9,7 @@
 // The universe is the same for every player. ?universe= (or the old ?seed=) makes a separate one.
 var UNIVERSE = getParameterByName('universe') || getParameterByName('seed') || 'spacejam-1';
 var showGrid = getParameterByName('showGrid') == 'true';
+var STILL = getParameterByName('still') == '1';   // tests: freeze moons and pulses
 var MIN_ZOOM = 0.6;
 var zoomParam = getParameterByName('zoomLevel');
 view.zoom = zoomParam ? Math.max(MIN_ZOOM, +zoomParam) : 1.2;
@@ -84,6 +85,7 @@ function onFrame(event) {
         if (fuel <= 0 && velocity.length < 8) endRun();
     }
     placeShip();
+    animate(STILL ? 0 : event.time);
     setStarOffset(pos.x, pos.y);
     updateHud(score, best, Math.round(fuel));
     var s = sectorOf(pos.x, pos.y);
@@ -158,22 +160,111 @@ function loadSector(sx, sy) {
             point: [0, 0], size: [SECTOR_SIZE, SECTOR_SIZE], strokeColor: '#3f3f3f', strokeWidth: 3
         }));
     }
-    data.planets.forEach(function(p) {
-        group.addChild(new Path.Circle({
-            center: [p.x, p.y],
-            radius: p.r,
-            fillColor: { hue: p.hue, saturation: p.saturation, brightness: p.brightness }
-        }));
-    });
+    var light = new Point({ angle: data.region.light, length: 1 });
+    var moons = [];
+    data.planets.forEach(function(p) { drawPlanet(group, p, light, moons); });
+    // Energy glows in the opposite hue of the region, so it stands out from the planets.
+    var energyHue = (data.region.hue + 180) % 360;
     var energy = [];
     data.energy.forEach(function(e) {
         if (collected[e.id]) return;
-        var item = new Path.Circle({ center: [e.x, e.y], radius: 4, fillColor: '#6f9', shadowColor: '#6f9', shadowBlur: 14 });
+        var item = new Path.Circle({
+            center: [e.x, e.y], radius: 4,
+            fillColor: hsb(energyHue, 0.25, 1), shadowColor: hsb(energyHue, 0.9, 1), shadowBlur: 16
+        });
         group.addChild(item);
         energy.push({ e: e, item: item });
     });
     group.translate(new Point(sx * SECTOR_SIZE - origin.x, sy * SECTOR_SIZE - origin.y));
-    sectors[key] = { sx: sx, sy: sy, data: data, group: group, energy: energy };
+    sectors[key] = { sx: sx, sy: sy, data: data, group: group, energy: energy, moons: moons };
+}
+
+//==============================================
+//=========        Planet looks        =========
+//==============================================
+// p.look holds LOOK_SLOTS numbers (see sectorData): 0-2 colour, 3 atmosphere, 4-5 ring,
+// 6-7 moons. Atmospheres, rings and moons are decoration: only the body collides.
+function hsb(h, s, b, a) {
+    return new Color({ hue: h, saturation: Math.max(0, Math.min(1, s)), brightness: Math.max(0, Math.min(1, b)), alpha: a == null ? 1 : a });
+}
+
+function drawPlanet(group, p, light, moons) {
+    var v = p.look;
+    var center = new Point(p.x, p.y);
+    var base = hsb(p.hue, p.saturation, p.brightness);
+    var lightSide = hsb(p.hue, p.saturation * 0.6, p.brightness + 0.3);
+    var darkSide = hsb(p.hue, p.saturation + 0.1, p.brightness * 0.2);
+
+    if (v[3] < 0.4) {
+        var halo = p.r * 1.4;
+        group.addChild(new Path.Circle({
+            center: center, radius: halo,
+            fillColor: {
+                gradient: { stops: [[hsb(p.hue, p.saturation, 1, 0.35), 0.68], [hsb(p.hue, p.saturation, 1, 0), 1]], radial: true },
+                origin: center, destination: center + new Point(halo, 0)
+            }
+        }));
+    }
+
+    var ring = p.r > 14 && v[4] < 0.3 ? ringHalves(center, p.r, v[5] * 140 - 70, lightSide) : null;
+    if (ring) group.addChild(ring[0]);
+
+    // Radial shading: bright where the region's light falls, dark on the far side.
+    var lit = center + light * (p.r * 0.45);
+    group.addChild(new Path.Circle({
+        center: center, radius: p.r,
+        fillColor: {
+            gradient: { stops: [[lightSide, 0], [base, 0.45], [darkSide, 1]], radial: true },
+            origin: lit, destination: lit - light * (p.r * 1.45)
+        }
+    }));
+    if (ring) group.addChild(ring[1]);
+
+    if (p.r > 8) {
+        var count = Math.floor(v[6] * 3);
+        for (var m = 0; m < count; m++) {
+            var moon = new Path.Circle({ center: center, radius: Math.max(1.5, p.r * 0.13), fillColor: hsb(p.hue, 0.12, 0.8) });
+            group.addChild(moon);
+            moons.push({
+                item: moon, cx: p.x, cy: p.y,
+                orbit: p.r * (1.7 + m * 0.55 + v[7] * 0.3),
+                speed: (0.25 + v[7] * 0.5) * (m % 2 ? -1 : 1) / (1 + m),
+                phase: v[7] * 6.283 + m * 2.1
+            });
+        }
+    }
+}
+
+// A ring as two half-ellipses: the back half is drawn before the planet, the front half after.
+function ringHalves(center, r, tilt, color) {
+    var a = r * 1.9;
+    var halves = [
+        new Path.Arc({ from: [-a, 0], through: [0, -a], to: [a, 0] }),
+        new Path.Arc({ from: [a, 0], through: [0, a], to: [-a, 0] })
+    ];
+    halves.forEach(function(arc) {
+        arc.scale(1, 0.32, new Point(0, 0));
+        arc.rotate(tilt, new Point(0, 0));
+        arc.translate(center);
+        arc.strokeColor = color;
+        arc.strokeWidth = Math.max(1, r * 0.1);
+        arc.opacity = 0.75;
+    });
+    return halves;
+}
+
+// Moons orbit; energy pulses. `t` is in seconds.
+function animate(t) {
+    Object.keys(sectors).forEach(function(k) {
+        var sec = sectors[k];
+        sec.moons.forEach(function(m) {
+            var a = m.phase + m.speed * t;
+            m.item.position = new Point(m.cx + Math.cos(a) * m.orbit, m.cy + Math.sin(a) * m.orbit);
+        });
+        sec.energy.forEach(function(en) {
+            en.item.opacity = 0.65 + 0.35 * Math.sin(t * 4 + en.e.x);
+        });
+    });
 }
 
 function unloadAllSectors() {
