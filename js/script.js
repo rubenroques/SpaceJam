@@ -35,6 +35,7 @@ var fuel = 100, score = 0, best = loadBest(), dead = false;
 var collected = {};      // energy ids taken in this run
 var sectors = {};        // "sx,sy" -> { sx, sy, data, group, energy }
 var loadedKey = null, loadRadius = 0;
+var regionId = null;     // region of the ship's sector, for the "Entering" banner
 var keysPressed = {};
 
 var worldLayer = project.activeLayer;
@@ -139,6 +140,11 @@ function updateSectors() {
             delete sectors[k];
         }
     });
+    var here = sectors[key].data.region;
+    if (here.id != regionId) {
+        regionId = here.id;
+        showRegion(here);
+    }
 }
 
 function loadSector(sx, sy) {
@@ -156,7 +162,7 @@ function loadSector(sx, sy) {
         group.addChild(new Path.Circle({
             center: [p.x, p.y],
             radius: p.r,
-            fillColor: { hue: p.hue, saturation: 0.55, brightness: 0.8 }
+            fillColor: { hue: p.hue, saturation: p.saturation, brightness: p.brightness }
         }));
     });
     var energy = [];
@@ -216,6 +222,7 @@ function restart() {
     velocity = new Point(0, 0);
     pos = new Point(spawn.x, spawn.y);
     origin = sectorCorner(spawn.x, spawn.y);
+    regionId = null;
     updateSectors();
     placeShip();
     showGameOver(false);

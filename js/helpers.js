@@ -26,31 +26,124 @@ function dist(ax, ay, bx, by) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+// Fast integer hash of (seed, x, y) to 0..1. For values that need no stream.
+function hash2(seed, x, y) {
+    var h = Math.imul(2166136261 ^ seed, 16777619);
+    h = Math.imul(h ^ x, 16777619);
+    h = Math.imul(h ^ y, 16777619);
+    h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+}
+
+function hashString(s) {
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h | 0;
+}
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function pick(rnd, list) { return list[Math.floor(rnd() * list.length)]; }
+
+// ---- Names ----
+var NAME_ONSET = ['', '', 'b', 'c', 'd', 'f', 'g', 'h', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'z',
+                  'th', 'kr', 'dr', 'st', 'vr', 'sh', 'qu', 'x', 'br', 'tr'];
+var NAME_VOWEL = ['a', 'e', 'i', 'o', 'u', 'a', 'e', 'o', 'ae', 'ia', 'io', 'y', 'ou', 'ei'];
+var NAME_CODA = ['', '', '', 'n', 'r', 's', 'l', 'x', 'th', 'm', 'sk', 'nd'];
+
+function makeName(rnd) {
+    var n = 2 + Math.floor(rnd() * 2), s = '';
+    for (var i = 0; i < n; i++) {
+        s += pick(rnd, NAME_ONSET) + pick(rnd, NAME_VOWEL);
+        if (i == n - 1) s += pick(rnd, NAME_CODA);
+    }
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ---- Regions ----
+// A region is a Voronoi cell: each block of REGION_CELL x REGION_CELL sectors has one
+// site point; a sector belongs to the nearest site. Each region has one colour tone,
+// a density, a planet size and an energy richness.
+var REGION_CELL = 12;
+var regionCache = {};
+
+function regionAt(universe, sx, sy) {
+    var seed = hashString(universe);
+    var px = sx + 0.5, py = sy + 0.5;
+    var cx = Math.floor(px / REGION_CELL), cy = Math.floor(py / REGION_CELL);
+    var bestD = Infinity, bx = 0, by = 0;
+    for (var dx = -1; dx <= 1; dx++) {
+        for (var dy = -1; dy <= 1; dy++) {
+            var gx = cx + dx, gy = cy + dy;
+            var siteX = (gx + 0.15 + 0.7 * hash2(seed, gx, gy)) * REGION_CELL;
+            var siteY = (gy + 0.15 + 0.7 * hash2(seed ^ 0x5bd1e995, gx, gy)) * REGION_CELL;
+            var d = (siteX - px) * (siteX - px) + (siteY - py) * (siteY - py);
+            if (d < bestD) { bestD = d; bx = gx; by = gy; }
+        }
+    }
+    return regionInfo(universe, bx, by);
+}
+
+function regionInfo(universe, gx, gy) {
+    var key = universe + ':' + gx + ',' + gy;
+    if (regionCache[key]) return regionCache[key];
+    var r = streamFor(universe, 'region', gx, gy);
+    var density = r() < 0.15 ? 0.1 : 0.35 + r() * 0.65;   // some regions are almost empty
+    var region = {
+        id: gx + ',' + gy,
+        hue: r() * 360,
+        spread: 6 + r() * 22,            // hue variation of the planets, in degrees
+        saturation: 0.3 + r() * 0.5,
+        brightness: 0.55 + r() * 0.4,
+        density: density,
+        size: 0.6 + r() * 0.9,
+        richness: 0.5 + r() * 1.5
+    };
+    var kind = density < 0.2 ? 'Void' : density > 0.85 ? 'Cluster' : pick(r, ['Reach', 'Expanse', 'Drift', 'Belt', 'Deep']);
+    region.name = makeName(streamFor(universe, 'name', gx, gy)) + ' ' + kind;
+    if (Object.keys(regionCache).length > 500) regionCache = {};
+    regionCache[key] = region;
+    return region;
+}
+
 // Planets and energy of one sector, in sector-local units (0..SECTOR_SIZE). No drawing.
 // Each planet stays fully inside its sector, so planets of different sectors never overlap.
+var LOOK_SLOTS = 8;   // numbers reserved per planet in the 'look' stream (see below)
+
 function sectorData(universe, sx, sy) {
+    var region = regionAt(universe, sx, sy);
     var rnd = streamFor(universe, 'planets', sx, sy);
-    var tries = Math.floor(rnd() * 13);
-    var hue = rnd() * 360;
+    var tries = Math.floor(rnd() * 13 * region.density);
     var planets = [];
     for (var i = 0; i < tries; i++) {
         // Always take 3 numbers per try, so a rejected try does not shift the next ones.
-        var r = 2 + rnd() * 36;
+        var r = Math.min(70, (2 + rnd() * 36) * region.size);
         var x = r + rnd() * (SECTOR_SIZE - 2 * r);
         var y = r + rnd() * (SECTOR_SIZE - 2 * r);
         var free = planets.every(function (p) { return dist(p.x, p.y, x, y) > p.r + r + 8; });
-        if (free) planets.push({ x: x, y: y, r: r, hue: hue });
+        if (free) planets.push({ x: x, y: y, r: r });
     }
+
+    // Look of each planet: always LOOK_SLOTS numbers per planet, so a new visual detail
+    // can use a free slot without changing the colours of the other planets.
+    var look = streamFor(universe, 'look', sx, sy);
+    planets.forEach(function (p) {
+        var v = [];
+        for (var k = 0; k < LOOK_SLOTS; k++) v.push(look());
+        p.hue = (region.hue + (v[0] * 2 - 1) * region.spread + 360) % 360;
+        p.saturation = clamp01(region.saturation + (v[1] - 0.5) * 0.25);
+        p.brightness = clamp01(region.brightness + (v[2] - 0.5) * 0.25);
+        p.look = v;
+    });
 
     var e = streamFor(universe, 'energy', sx, sy);
     var energy = [];
-    var count = Math.floor(e() * 3);
+    var count = Math.min(4, Math.floor(e() * 3 * region.richness));
     for (var j = 0; j < count; j++) {
         var ex = 10 + e() * (SECTOR_SIZE - 20), ey = 10 + e() * (SECTOR_SIZE - 20);
         var clear = planets.every(function (p) { return dist(p.x, p.y, ex, ey) > p.r + 16; });
         if (clear) energy.push({ x: ex, y: ey, id: sx + ',' + sy + ':' + j });
     }
-    return { planets: planets, energy: energy };
+    return { region: region, planets: planets, energy: energy };
 }
 
 // The pilot's home sector: from ?at=sx,sy, or from the pilot id.
@@ -109,6 +202,14 @@ function setStarOffset(x, y) {
 function setText(id, text) {
     var el = document.getElementById(id);
     if (el.textContent !== text) el.textContent = text;
+}
+// Region change: name in the HUD, a banner, and the background takes the region's tone.
+function showRegion(region) {
+    setText('region', region.name);
+    document.body.style.backgroundColor = 'hsl(' + Math.round(region.hue) + ', 45%, 6%)';
+    var b = document.getElementById('banner');
+    b.textContent = 'Entering ' + region.name;
+    b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
 }
 function updateHud(score, best, fuel) {
     setText('score', String(score));

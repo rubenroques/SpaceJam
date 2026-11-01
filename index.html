@@ -10,6 +10,7 @@ body {
 		radial-gradient(2px 2px at 60px 220px, #ccf, transparent), radial-gradient(2px 2px at 260px 60px, #ffe, transparent);
 	background-size: 240px 240px, 240px 240px, 240px 240px, 330px 330px, 330px 330px;
 	font-family: monospace; color: #cde;
+	transition: background-color 2.5s;
     margin: 0;
     overflow: hidden;
     height: 100%;
@@ -25,7 +26,11 @@ canvas[resize] {
 #hud span { margin-right: 18px; }
 #fuelbar { width: 160px; height: 8px; border: 1px solid #567; margin-top: 6px; }
 #fuel { height: 100%; width: 100%; background: #fc5; }
-#where { margin-top: 6px; font-size: 12px; opacity: 0.7; }
+#region { margin-top: 8px; font-size: 13px; letter-spacing: 1px; }
+#where { margin-top: 2px; font-size: 12px; opacity: 0.6; }
+#banner { position: fixed; top: 16%; width: 100%; text-align: center; font-size: 22px; letter-spacing: 4px; opacity: 0; pointer-events: none; }
+#banner.show { animation: banner 3.5s; }
+@keyframes banner { 0% { opacity: 0; } 15% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
 #over { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 32px; pointer-events: none; }
 #over[hidden] { display: none; }
 #flash { position: fixed; inset: 0; background: #f33; opacity: 0; pointer-events: none; transition: opacity 0.6s; }
@@ -49,7 +54,8 @@ canvas[resize] {
 <body>
 
 <canvas id="myCanvas" resize="true"></canvas>
-<div id="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><div id="fuelbar"><div id="fuel"></div></div><div id="where"></div></div>
+<div id="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><div id="fuelbar"><div id="fuel"></div></div><div id="region"></div><div id="where"></div></div>
+<div id="banner"></div>
 <div id="over" hidden>GAME OVER<br><small>press R to restart</small></div>
 <div id="flash"></div>
 
