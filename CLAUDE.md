@@ -21,7 +21,7 @@ open "http://localhost:8080/?pilot=test&at=100,200"
 | Parameter   | Effect |
 |-------------|--------|
 | `universe`  | Universe name, default `spacejam-1`. `seed` is an old alias. Another name is a different universe. |
-| `pilot`     | Pilot id. Default: a random id stored in localStorage (`spacejam.pilot`). Sets the home sector and the ship. |
+| `pilot`     | Pilot id. Default: a random id stored in localStorage (`spacejam.pilot`); if storage is blocked, a new id on every load. Sets the home sector and the ship. |
 | `at`        | `sx,sy`: start in this sector (or the nearest one with a clear centre) instead of the pilot's home. |
 | `zoomLevel` | Start zoom, default 1.2, minimum 0.6. |
 | `showGrid`  | `true` draws the sector borders. |

@@ -29,3 +29,5 @@ Then open <http://localhost:8080/>. The page must be served over HTTP.
 | L | Copy a link to your current place in the universe |
 
 URL parameters: `?universe=` (another universe), `?pilot=` (another pilot), `?at=sx,sy` (start in a sector), `?showGrid=true`.
+
+Your pilot id is kept in the browser's localStorage. In a private window, or when storage is blocked, you get a new pilot (new home and new ship) on every load; use `?pilot=yourname` to keep the same one.

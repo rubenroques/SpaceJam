@@ -414,7 +414,7 @@ window.spacejam = {
         var s = sectorOf(pos.x, pos.y);
         return { universe: UNIVERSE, pilot: pilot, x: pos.x, y: pos.y, sector: [s.x, s.y],
                  origin: [origin.x, origin.y], sectors: Object.keys(sectors).length,
-                 items: worldLayer.children.length, dead: dead, score: score, fuel: fuel };
+                 groups: worldLayer.children.length, dead: dead, score: score, fuel: fuel };
     },
     restart: restart,
     // Test: move the origin by whole sectors. The frame must not change.
