@@ -25,6 +25,7 @@ canvas[resize] {
 #hud span { margin-right: 18px; }
 #fuelbar { width: 160px; height: 8px; border: 1px solid #567; margin-top: 6px; }
 #fuel { height: 100%; width: 100%; background: #fc5; }
+#where { margin-top: 6px; font-size: 12px; opacity: 0.7; }
 #over { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-size: 32px; pointer-events: none; }
 #over[hidden] { display: none; }
 #flash { position: fixed; inset: 0; background: #f33; opacity: 0; pointer-events: none; transition: opacity 0.6s; }
@@ -48,7 +49,7 @@ canvas[resize] {
 <body>
 
 <canvas id="myCanvas" resize="true"></canvas>
-<div id="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><div id="fuelbar"><div id="fuel"></div></div></div>
+<div id="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><div id="fuelbar"><div id="fuel"></div></div><div id="where"></div></div>
 <div id="over" hidden>GAME OVER<br><small>press R to restart</small></div>
 <div id="flash"></div>
 

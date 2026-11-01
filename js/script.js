@@ -1,178 +1,64 @@
+// Project Space Jam: one shared, procedural universe.
+// PaperScript: ES5 only (paper-full.js parses it with acorn, ecmaVersion 5).
+// The universe data comes from helpers.js (plain functions of numbers); this file draws it
+// and runs the game.
 
-console.log("Start");
+//==============================================
+//=========          Settings          =========
+//==============================================
+// The universe is the same for every player. ?universe= (or the old ?seed=) makes a separate one.
+var UNIVERSE = getParameterByName('universe') || getParameterByName('seed') || 'spacejam-1';
+var showGrid = getParameterByName('showGrid') == 'true';
+var MIN_ZOOM = 0.6;
+var zoomParam = getParameterByName('zoomLevel');
+view.zoom = zoomParam ? Math.max(MIN_ZOOM, +zoomParam) : 1.2;
 
+var SHIP_RADIUS = 6;
+var ENERGY_RADIUS = 14;   // pickup distance
 
-var seedRaw = getParameterByName('seed');
-var showGridRaw = getParameterByName('showGrid');
-var initialZoomRaw = getParameterByName('zoomLevel');
+// The pilot decides where you start. ?pilot= and ?at=sx,sy override it.
+var pilot = getParameterByName('pilot') || loadPilot();
+var spawn = findSpawn(UNIVERSE, homeSector(UNIVERSE, pilot, getParameterByName('at')));
 
-var showGrid = false;
-var initialZoom = 2.6;
-
-// Dynamic sector storage - use object with "x,y" keys for infinite map
-var activeSectors = {};
-var SECTOR_SIZE = 400;
-var LOAD_DISTANCE = 2; // Load sectors within 2 sector radius
-var UNLOAD_DISTANCE = 4; // Unload sectors beyond 4 sector radius
-
-if (seedRaw == undefined || seedRaw == '') {
-    seedRaw = new Date().getTime();
-}
-
-if (showGridRaw == 'true') {
-    showGrid = true;
-} else if (showGridRaw == 'false') {
-    showGrid = false;
-}
-
-if (initialZoomRaw == undefined || initialZoomRaw == '') {
-    initialZoom = 1.2;
-} else {
-    initialZoom = +initialZoomRaw;
-}
-
-var seed = seedRaw;
-console.log("Original Seed:" + seed);
-
-// Initialize seedrandom with the seed
-var rng = new Math.seedrandom(seed);
-
-function random() {
-    return rng();
-}
-
-var planetsSize = Math.round(random() * 50);
-console.log("Galaxy size:" + planetsSize);
-
-
-setViewCenter(new Point(random() * 5000000, random() * 5000000));
-
-console.log("Initial location:" + view.center + '; bounds' + view.getBounds());
-
-
-
-var Galaxy = function() {
-    // Galaxy is now just a container - sectors managed globally
-    this.random = arguments.randomGenerator;
-}
-
-var PlanetarySystem = function(arguments) {
-
-    this.detailLevel = 1000;
-    this.showGrid = arguments.showGrid; 
-    this.random = arguments.randomGenerator;
-    this.rect = new paper.Path.Rectangle(arguments.rectangle);
-    this.rect.strokeWidth = 3;
-    if (this.showGrid) {
-        this.rect.strokeColor = '#3f3f3f';
-    }
-    
-
-    this.planetsSize = Math.round(this.random() * (this.rect.bounds.width*0.030));
-    this.planetsColor = new Color(this.random(),this.random(),this.random());
-    this.planets = [];
-
-    this.center = {'x': 0,'y': 0};
-    
-
-    this.drawPlanets = function() {
-        console.log("planets to draw:" + this.planetsSize);
-        var it = 0;
-        while (it < this.planetsSize) {
-
-            var x = this.random()*this.rect.bounds.width+this.rect.position.x-(this.rect.bounds.width/2);
-            var y = this.random()*this.rect.bounds.height+this.rect.position.y-(this.rect.bounds.height/2);
-            var center = new Point(x, y);
-            var planet = new Path.Circle({
-                center: center,
-                radius: (this.random() * (this.rect.bounds.height*0.09))+(this.rect.bounds.height*0.005),
-                strokeColor: '#737373',
-                strokeWidth: 0.5,
-                fillColor: this.planetsColor
-            });
-
-            var intersections = 0;
-            this.planets.forEach(function(iterator) {
-
-                var intersections = planet.getIntersections(iterator);
-
-                if (intersections.length > 0) {
-                    planet.remove();
-                } else {
-                    intersections++;
-                }
-            });
-
-            if (intersections == 0) {
-                planet.onClick = function(event) {
-                    this.fillColor = 'red';
-                    console.log("\ncenter:" + this.position + "\nbounds:" + this.bounds + "\n");
-                }
-                this.planets.push(planet);
-            }
-            it++;
-        }
-    }
-}
-
-// Old fixed grid function - no longer used, replaced by dynamic generation
-
-
-
-
-//  [][][][][][][][][]
-//  [] 1 1 1 1 1 1 1[]
-//  [] 1 2 2 2 2 2 1[]
-//  [] 1 2 3 X 3 2 1[]
-//  [] 1 2 2 2 2 2 1[]
-//  [] 1 1 1 1 1 1 1[]
-//  [][][][][][][][][]
-
-// Game state. Declared before the first updateVisibleSectors call, because generateSector reads `collected`.
-var startCenter = view.center;
+//==============================================
+//=========         Game state         =========
+//==============================================
+// World coordinates are JS doubles and can be very large. Paper.js items use coordinates
+// relative to `origin` (a sector corner near the ship), because the canvas draws in 32-bit
+// floats and shapes break far from (0, 0).
+var origin = sectorCorner(spawn.x, spawn.y);
+var pos = new Point(spawn.x, spawn.y);   // ship, world coordinates
 var velocity = new Point(0, 0);
 var heading = -90;
 var fuel = 100, score = 0, best = loadBest(), dead = false;
-var collected = {};
-var SHIP_RADIUS = 6;
+var collected = {};      // energy ids taken in this run
+var sectors = {};        // "sx,sy" -> { sx, sy, data, group, energy }
+var loadedKey = null, loadRadius = 0;
+var keysPressed = {};
 
-var galaxy1 = new Galaxy()
-
-// Initialize sectors around starting position
-updateVisibleSectors(view.center.x, view.center.y);
-clearSpawn();
+var worldLayer = project.activeLayer;
+var shipLayer = new Layer();
+worldLayer.activate();
 
 // applyMatrix: false, so `rotation` is an absolute angle and does not accumulate.
+// pivot [0, 0], so `position` is the hull origin and not the centre of the rotated bounds.
 var player = new Path({
     segments: [[9, 0], [-6, -6], [-3, 0], [-6, 6]],
     closed: true,
     fillColor: '#7df',
     strokeColor: 'white',
     strokeWidth: 1,
-    applyMatrix: false
+    applyMatrix: false,
+    pivot: [0, 0]
 });
-player.position = view.center;
-player.rotation = heading;
-var zoomLevel = initialZoom;
-view.zoom = zoomLevel;
+shipLayer.addChild(player);
 
-// Track which keys are currently pressed
-var keysPressed = {};
-
-
-function checkIfNeedToDraw(){
-
-    return true
-}
-
-function getPlanetarySystem(galaxy, x, y){
-
-}
+updateSectors();
+placeShip();
 
 //==============================================
-//=========   View Helper Functions    =========
-//============================================== 
-
+//=========          Frame loop        =========
+//==============================================
 function onFrame(event) {
     var dt = Math.min(event.delta, 0.05);
     if (!dead) {
@@ -185,38 +71,116 @@ function onFrame(event) {
         }
         velocity = velocity * Math.max(0, 1 - 0.35 * dt);
         if (velocity.length > 320) velocity = velocity.normalize(320);
-        player.rotation = heading;
         player.fillColor = thrusting ? '#fd6' : '#7df';
-        setViewCenter(view.center + velocity * dt);
-        updateVisibleSectors(view.center.x, view.center.y);
+        pos = pos + velocity * dt;
+        updateSectors();
         checkCollisions();
         if (fuel <= 0 && velocity.length < 8) endRun();
     }
-    setStarOffset(view.center.x, view.center.y);
+    placeShip();
+    setStarOffset(pos.x, pos.y);
     updateHud(score, best, Math.round(fuel));
+    var s = sectorOf(pos.x, pos.y);
+    setText('where', 'SECTOR ' + s.x + ', ' + s.y);
 }
 
-function hitPlanet(planets, pos, margin) {
-    // this.planets also holds planets that drawPlanets removed (see CLAUDE.md), so skip them.
-    for (var i = 0; i < planets.length; i++) {
-        var p = planets[i];
-        if (p.isInserted() && pos.getDistance(p.position) < p.bounds.width / 2 + margin) return p;
+function placeShip() {
+    var local = pos - origin;
+    view.center = local;
+    player.position = local;
+    player.rotation = heading;
+}
+
+//==============================================
+//=========     Sectors (streaming)    =========
+//==============================================
+function sectorOf(wx, wy) {
+    return { x: Math.floor(wx / SECTOR_SIZE), y: Math.floor(wy / SECTOR_SIZE) };
+}
+
+function sectorCorner(wx, wy) {
+    var s = sectorOf(wx, wy);
+    return new Point(s.x * SECTOR_SIZE, s.y * SECTOR_SIZE);
+}
+
+// Load the sectors that the view can show; unload the ones more than one sector further.
+function updateSectors() {
+    var s = sectorOf(pos.x, pos.y);
+    var key = s.x + ',' + s.y;
+    var half = Math.max(view.bounds.width, view.bounds.height) / 2;
+    var r = Math.ceil(half / SECTOR_SIZE);
+    if (key == loadedKey && r == loadRadius) return;
+    loadedKey = key;
+    loadRadius = r;
+    for (var dx = -r; dx <= r; dx++) {
+        for (var dy = -r; dy <= r; dy++) {
+            loadSector(s.x + dx, s.y + dy);
+        }
     }
-    return null;
+    Object.keys(sectors).forEach(function(k) {
+        var sec = sectors[k];
+        if (Math.max(Math.abs(sec.sx - s.x), Math.abs(sec.sy - s.y)) > r + 1) {
+            sec.group.remove();
+            delete sectors[k];
+        }
+    });
 }
 
+function loadSector(sx, sy) {
+    var key = sx + ',' + sy;
+    if (sectors[key]) return;
+    var data = sectorData(UNIVERSE, sx, sy);
+    // Children use sector-local coordinates; the group matrix moves them into place.
+    var group = new Group({ applyMatrix: false });
+    if (showGrid) {
+        group.addChild(new Path.Rectangle({
+            point: [0, 0], size: [SECTOR_SIZE, SECTOR_SIZE], strokeColor: '#3f3f3f', strokeWidth: 3
+        }));
+    }
+    data.planets.forEach(function(p) {
+        group.addChild(new Path.Circle({
+            center: [p.x, p.y],
+            radius: p.r,
+            fillColor: { hue: p.hue, saturation: 0.55, brightness: 0.8 }
+        }));
+    });
+    var energy = [];
+    data.energy.forEach(function(e) {
+        if (collected[e.id]) return;
+        var item = new Path.Circle({ center: [e.x, e.y], radius: 4, fillColor: '#6f9', shadowColor: '#6f9', shadowBlur: 14 });
+        group.addChild(item);
+        energy.push({ e: e, item: item });
+    });
+    group.translate(new Point(sx * SECTOR_SIZE - origin.x, sy * SECTOR_SIZE - origin.y));
+    sectors[key] = { sx: sx, sy: sy, data: data, group: group, energy: energy };
+}
+
+function unloadAllSectors() {
+    Object.keys(sectors).forEach(function(k) { sectors[k].group.remove(); });
+    sectors = {};
+    loadedKey = null;
+}
+
+//==============================================
+//=========     Collisions and rules   =========
+//==============================================
+// Only the 3x3 sectors around the ship: a planet stays inside its own sector.
 function checkCollisions() {
-    var pos = player.position;
-    var s = getSectorCoords(pos.x, pos.y);
+    var s = sectorOf(pos.x, pos.y);
     for (var dx = -1; dx <= 1; dx++) {
         for (var dy = -1; dy <= 1; dy++) {
-            var sector = activeSectors[getSectorKey(s.x + dx, s.y + dy)];
-            if (!sector) continue;
-            if (hitPlanet(sector.system.planets, pos, SHIP_RADIUS)) { endRun(); return; }
-            sector.pickups.forEach(function(e) {
-                if (e.isInserted() && pos.getDistance(e.position) < 14) {
-                    e.remove();
-                    collected[e.data.id] = true;
+            var sec = sectors[(s.x + dx) + ',' + (s.y + dy)];
+            if (!sec) continue;
+            // Ship in this sector's local units: small numbers, exact enough.
+            var lx = pos.x - sec.sx * SECTOR_SIZE, ly = pos.y - sec.sy * SECTOR_SIZE;
+            var planets = sec.data.planets;
+            for (var i = 0; i < planets.length; i++) {
+                if (dist(lx, ly, planets[i].x, planets[i].y) < planets[i].r + SHIP_RADIUS) { endRun(); return; }
+            }
+            sec.energy.forEach(function(en) {
+                if (!collected[en.e.id] && dist(lx, ly, en.e.x, en.e.y) < ENERGY_RADIUS) {
+                    collected[en.e.id] = true;
+                    en.item.remove();
                     score += 10;
                     fuel = Math.min(100, fuel + 25);
                     if (score > best) { best = score; saveBest(best); }
@@ -226,168 +190,43 @@ function checkCollisions() {
     }
 }
 
-// Remove planets on top of the start point, so a run never starts inside a planet.
-function clearSpawn() {
-    Object.keys(activeSectors).forEach(function(k) {
-        var hit;
-        while ((hit = hitPlanet(activeSectors[k].system.planets, startCenter, 60))) hit.remove();
-    });
-}
-
 function endRun() {
     dead = true;
     showGameOver(true);
 }
 
 function restart() {
-    unloadDistantSectors(Infinity, Infinity); // every sector is "too far": unload all
+    unloadAllSectors();
     collected = {}; score = 0; fuel = 100; heading = -90; dead = false;
     velocity = new Point(0, 0);
-    setViewCenter(startCenter);
-    updateVisibleSectors(startCenter.x, startCenter.y);
-    clearSpawn();
+    pos = new Point(spawn.x, spawn.y);
+    origin = sectorCorner(spawn.x, spawn.y);
+    updateSectors();
+    placeShip();
     showGameOver(false);
 }
 
-
-
-//==============================================
-//=========   View Helper Functions    =========
-//============================================== 
-function setViewCenter(newCenter) {
-    view.center = newCenter
-    if (player != undefined ) {
-        player.position = newCenter    
-    }
-}
-
-function zoomIn() {
-    view.zoom += 0.1
-    zoomLevel = view.zoom
-}
-
-function zoomOut() {
-    var newZoom = view.zoom - 0.1
-    if (newZoom <= 0) {
-        newZoom = 0.1
-    }
-    view.zoom = newZoom
-    zoomLevel = view.zoom
-}
-
-
 //==============================================
 //==========     User Interaction     ==========
-//============================================== 
+//==============================================
 function onKeyDown(event) {
     keysPressed[event.key] = true;
     if (event.key == 'r' && dead) restart();
-    if (event.key == '+') zoomIn();
-    if (event.key == '-') zoomOut();
+    if (event.key == '+') view.zoom = view.zoom + 0.1;
+    if (event.key == '-') view.zoom = Math.max(MIN_ZOOM, view.zoom - 0.1);
 }
 
 function onKeyUp(event) {
-    // Mark keys as released
     keysPressed[event.key] = false;
 }
 
-
-//==============================================
-//=========      Helper Functions      =========
-//============================================== 
-function convertCoordinateToSeed(x, y, seed) {
-    var result = ((y*x ^ seed) ^ x)^y;
-    return result
-}
-
-function getSeededRandom(seed) {
-    return new Math.seedrandom(seed);
-}
-
-//==============================================
-//=========    Infinite Map System     =========
-//============================================== 
-
-function getSectorCoords(worldX, worldY) {
-    return {
-        x: Math.floor(worldX / SECTOR_SIZE),
-        y: Math.floor(worldY / SECTOR_SIZE)
-    };
-}
-
-function getSectorKey(sectorX, sectorY) {
-    return sectorX + "," + sectorY;
-}
-
-function generateSector(sectorX, sectorY) {
-    var key = getSectorKey(sectorX, sectorY);
-    if (activeSectors[key]) {
-        return; // Already exists
-    }
-    
-    var worldX = sectorX * SECTOR_SIZE;
-    var worldY = sectorY * SECTOR_SIZE;
-    
-    var planetarySystem = new PlanetarySystem({
-        rectangle: new Rectangle(worldX, worldY, SECTOR_SIZE, SECTOR_SIZE),
-        randomGenerator: getSeededRandom(convertCoordinateToSeed(worldX, worldY, seed)),
-        showGrid: showGrid
-    });
-    planetarySystem.drawPlanets();
-
-    // 0-2 energy pickups. Same sector RNG, used after the planets, so the planet layout does not change.
-    var pickups = [];
-    var count = Math.floor(planetarySystem.random() * 3);
-    for (var i = 0; i < count; i++) {
-        var at = new Point(worldX + planetarySystem.random() * SECTOR_SIZE, worldY + planetarySystem.random() * SECTOR_SIZE);
-        var id = key + ':' + i;
-        if (collected[id] || hitPlanet(planetarySystem.planets, at, 12)) continue;
-        var e = new Path.Circle({ center: at, radius: 4, fillColor: '#6f9', shadowColor: '#6f9', shadowBlur: 14 });
-        e.data.id = id;
-        pickups.push(e);
-    }
-
-    activeSectors[key] = {
-        pickups: pickups,
-        system: planetarySystem,
-        sectorX: sectorX,
-        sectorY: sectorY
-    };
-}
-
-function unloadDistantSectors(playerSectorX, playerSectorY) {
-    Object.keys(activeSectors).forEach(function(key) {
-        var sector = activeSectors[key];
-        var distance = Math.max(
-            Math.abs(sector.sectorX - playerSectorX),
-            Math.abs(sector.sectorY - playerSectorY)
-        );
-        
-        if (distance > UNLOAD_DISTANCE) {
-            // Remove all planets in this sector
-            sector.system.planets.forEach(function(planet) {
-                planet.remove();
-            });
-            sector.pickups.forEach(function(e) { e.remove(); });
-            if (sector.system.rect) {
-                sector.system.rect.remove();
-            }
-            delete activeSectors[key];
-        }
-    });
-}
-
-function updateVisibleSectors(playerWorldX, playerWorldY) {
-    var playerSector = getSectorCoords(playerWorldX, playerWorldY);
-    
-    // Generate sectors around player
-    for (var dx = -LOAD_DISTANCE; dx <= LOAD_DISTANCE; dx++) {
-        for (var dy = -LOAD_DISTANCE; dy <= LOAD_DISTANCE; dy++) {
-            generateSector(playerSector.x + dx, playerSector.y + dy);
-        }
-    }
-    
-    // Unload distant sectors
-    unloadDistantSectors(playerSector.x, playerSector.y);
-}
-
+// Hook for tests and the browser console.
+window.spacejam = {
+    info: function() {
+        var s = sectorOf(pos.x, pos.y);
+        return { universe: UNIVERSE, pilot: pilot, x: pos.x, y: pos.y, sector: [s.x, s.y],
+                 origin: [origin.x, origin.y], sectors: Object.keys(sectors).length,
+                 items: worldLayer.children.length, dead: dead, score: score, fuel: fuel };
+    },
+    restart: restart
+};
