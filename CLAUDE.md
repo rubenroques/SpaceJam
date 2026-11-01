@@ -16,7 +16,21 @@ open "http://localhost:8080/?pilot=test&at=100,200"
 - Serve over HTTP. From `file://` the browser cannot fetch `js/script.js` (PaperScript loaded with `src`) and the canvas stays black.
 - `serve.py` uses only the Python standard library. No venv is necessary.
 - CDN scripts: Paper.js 0.12.18 and seedrandom 3.0.5 (unpkg), ZzFXMicro 1.4.0 (jsdelivr). ZzFX is optional: without it the game runs with no sound.
-- There is no build step, no package.json, no test suite and no linter. Check a change in the browser console. `window.spacejam.info()` returns the state; `window.spacejam.restart()` and `window.spacejam.shiftOrigin(sx, sy)` exist for tests.
+- There is no build step and no linter. The game itself has no package.json; only `tests/` has one.
+- In the browser console, `window.spacejam.info()` returns the state; `window.spacejam.restart()` and `window.spacejam.shiftOrigin(sx, sy)` exist for tests.
+
+## Tests
+
+```sh
+cd tests && npm install && npx playwright install chromium   # once (use nvm's Node)
+npm test                                                     # all checks, exit code 1 on a failure
+```
+
+`tests/run.js` serves the repo itself on a free port and needs network for the CDN scripts. It checks:
+- **Universe snapshot** (Node only): a hash of `sectorData`, spawns and ship designs for fixed places. It fails when a change alters the shared universe. If the change is intended, change the default universe name in `js/script.js` and update `UNIVERSE_SNAPSHOT`.
+- **Headless Chromium**: the page starts; two pilots at one `?at=` see the same pixels (ship masked); the frame after `restart()` equals the first frame (`?still=1`); `shiftOrigin()` changes less than 0.01% of the pixels; sector (1,000,000, -1,000,000) loads; bad `?zoomLevel=` and `?at=` values do not break the page; no page or console errors. The frame rate is printed, not checked.
+
+There is no single-test switch; comment out checks in `browserChecks()` to run fewer.
 
 | Parameter   | Effect |
 |-------------|--------|

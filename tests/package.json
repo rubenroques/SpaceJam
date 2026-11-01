@@ -1,0 +1,12 @@
+{
+  "name": "spacejam-tests",
+  "private": true,
+  "description": "Universe snapshot and headless browser checks for Project Space Jam",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "seedrandom": "3.0.5"
+  }
+}
