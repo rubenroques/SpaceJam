@@ -15,6 +15,7 @@ view.zoom = zoomParam ? Math.max(MIN_ZOOM, +zoomParam) : 1.2;
 
 var SHIP_RADIUS = 6;
 var ENERGY_RADIUS = 14;   // pickup distance
+var REBASE_DISTANCE = 20000;  // move the origin when the ship is this far from it
 
 // The pilot decides where you start. ?pilot= and ?at=sx,sy override it.
 var pilot = getParameterByName('pilot') || loadPilot();
@@ -73,6 +74,10 @@ function onFrame(event) {
         if (velocity.length > 320) velocity = velocity.normalize(320);
         player.fillColor = thrusting ? '#fd6' : '#7df';
         pos = pos + velocity * dt;
+        var local = pos - origin;
+        if (Math.abs(local.x) > REBASE_DISTANCE || Math.abs(local.y) > REBASE_DISTANCE) {
+            setOrigin(sectorCorner(pos.x, pos.y));
+        }
         updateSectors();
         checkCollisions();
         if (fuel <= 0 && velocity.length < 8) endRun();
@@ -89,6 +94,16 @@ function placeShip() {
     view.center = local;
     player.position = local;
     player.rotation = heading;
+}
+
+// Floating origin. The new origin must be a sector corner, so every shift is a whole
+// number of sectors and the drawing does not move.
+function setOrigin(newOrigin) {
+    var back = origin - newOrigin;
+    if (back.isZero()) return;
+    origin = newOrigin;
+    Object.keys(sectors).forEach(function(k) { sectors[k].group.translate(back); });
+    placeShip();
 }
 
 //==============================================
@@ -228,5 +243,9 @@ window.spacejam = {
                  origin: [origin.x, origin.y], sectors: Object.keys(sectors).length,
                  items: worldLayer.children.length, dead: dead, score: score, fuel: fuel };
     },
-    restart: restart
+    restart: restart,
+    // Test: move the origin by whole sectors. The frame must not change.
+    shiftOrigin: function(sx, sy) {
+        setOrigin(origin + new Point(sx * SECTOR_SIZE, sy * SECTOR_SIZE));
+    }
 };
