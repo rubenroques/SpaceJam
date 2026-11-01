@@ -9,7 +9,11 @@ var initialZoomRaw = getParameterByName('zoomLevel');
 var showGrid = true;
 var initialZoom = 2.6;
 
-var planetarySystems = [[]];
+// Dynamic sector storage - use object with "x,y" keys for infinite map
+var activeSectors = {};
+var SECTOR_SIZE = 400;
+var LOAD_DISTANCE = 2; // Load sectors within 2 sector radius
+var UNLOAD_DISTANCE = 4; // Unload sectors beyond 4 sector radius
 
 if (seedRaw == undefined || seedRaw == '') {
     seedRaw = new Date().getTime();
@@ -28,20 +32,13 @@ if (initialZoomRaw == undefined || initialZoomRaw == '') {
 }
 
 var seed = seedRaw;
-var xorshift64starSeed = +seed;
+console.log("Original Seed:" + seed);
 
-console.log("Original Seed:" + xorshift64starSeed);
-
+// Initialize seedrandom with the seed
+var rng = new Math.seedrandom(seed);
 
 function random() {
-    return xorshift64star();
-}
-
-function xorshift64star() {
-    xorshift64starSeed = xorshift64starSeed ^ (xorshift64starSeed >> 12) // a
-    xorshift64starSeed = xorshift64starSeed ^ (xorshift64starSeed << 25) // b
-    xorshift64starSeed = xorshift64starSeed ^ (xorshift64starSeed >> 27) // c
-    return ((xorshift64starSeed * 2685821657736338717) % 1000) / 1000;
+    return rng();
 }
 
 var planetsSize = Math.round(random() * 50);
@@ -55,14 +52,8 @@ console.log("Initial location:" + view.center + '; bounds' + view.getBounds());
 
 
 var Galaxy = function() {
-
-    this.planetarySystems = [[]];
+    // Galaxy is now just a container - sectors managed globally
     this.random = arguments.randomGenerator;
-
-    this.addPlanetarySystem = function(planetarySystem, x, y) {
-
-        this.planetarySystems[x][y] = planetarySystem;
-    }
 }
 
 var PlanetarySystem = function(arguments) {
@@ -124,26 +115,7 @@ var PlanetarySystem = function(arguments) {
     }
 }
 
-var drawPlanetarySystem = function(galaxy, num_rectangles_wide, num_rectangles_tall, boundingRect) {
-    var width = 400;
-    var height = 400;
-    for (var i = 0; i < num_rectangles_wide; i++) {
-        for (var j = 0; j < num_rectangles_tall; j++) {
-
-            var x = boundingRect.left + i * width;
-            var y = boundingRect.top + j * height;
-
-            var planetarySystem = new PlanetarySystem({
-                rectangle: (new Rectangle(x, y, width, height)),
-                randomGenerator: getXorRandomWithSeed(convertCoordinateToSeed(x,y,seed)),
-                showGrid:showGrid
-            });
-            planetarySystem.drawPlanets();
-
-            planetarySystems.push(planetarySystem);
-        }
-    }
-}
+// Old fixed grid function - no longer used, replaced by dynamic generation
 
 
 
@@ -158,19 +130,23 @@ var drawPlanetarySystem = function(galaxy, num_rectangles_wide, num_rectangles_t
 
 var galaxy1 = new Galaxy()
 
-drawPlanetarySystem(galaxy1, 5, 5, view.bounds);
+// Initialize sectors around starting position
+updateVisibleSectors(view.center.x, view.center.y);
 
 var player = new Path.Circle({
-               center: view.center,
-               radius: 5,
-               strokeColor: '#737373',
-               strokeWidth: 0.5,
-               fillColor: 'red'
-           });
+    center: view.center,
+    radius: 5,
+    strokeColor: '#737373',
+    strokeWidth: 0.5,
+    fillColor: 'red'
+});
 
 var destination = view.center;
 var zoomLevel = initialZoom;
 view.zoom = zoomLevel;
+
+// Track which keys are currently pressed
+var keysPressed = {};
 
 
 function checkIfNeedToDraw(){
@@ -187,8 +163,37 @@ function getPlanetarySystem(galaxy, x, y){
 //============================================== 
 
 function onFrame() {
+    // Handle continuous movement based on pressed keys
+    var movementSpeed = 2;
+    var deltaX = 0;
+    var deltaY = 0;
+    
+    // Check for movement keys (arrow keys and WASD)
+    if (keysPressed['up'] || keysPressed['w']) deltaY -= movementSpeed;
+    if (keysPressed['down'] || keysPressed['s']) deltaY += movementSpeed;
+    if (keysPressed['left'] || keysPressed['a']) deltaX -= movementSpeed;
+    if (keysPressed['right'] || keysPressed['d']) deltaX += movementSpeed;
+    
+    // Apply movement if any keys are pressed
+    if (deltaX !== 0 || deltaY !== 0) {
+        destination = new Point(destination.x + deltaX, destination.y + deltaY);
+    }
+    
+    // Smooth movement to destination with consistent speed
     var vector = destination - view.center;
-    setViewCenter(view.center + (vector / 15));
+    var distance = vector.length;
+    
+    if (distance > movementSpeed) {
+        // Move at consistent speed towards destination
+        var direction = vector.normalize();
+        setViewCenter(view.center + (direction * movementSpeed));
+    } else if (distance > 0.1) {
+        // Close to destination, move directly there
+        setViewCenter(destination);
+    }
+    
+    // Update sectors around player position for infinite map
+    updateVisibleSectors(view.center.x, view.center.y);
 }
 
 
@@ -226,26 +231,27 @@ function onMouseUp(event) {
 }
 
 function onKeyDown(event) {
-    var translationSize = 9;
+    // Mark keys as pressed for continuous movement
+    keysPressed[event.key] = true;
+    
+    // Handle special keys
     if (event.key == 'space') {
         destination = new Point(0, 0);
     }
-    if (event.key == 'down') {
-        destination = new Point(destination.x, destination.y + translationSize);
-    } else if (event.key == 'up') {
-        destination = new Point(destination.x, destination.y - translationSize);
-    } else if (event.key == 'left') {
-        destination = new Point(destination.x - translationSize, destination.y);
-    } else if (event.key == 'right') {
-        destination = new Point(destination.x + translationSize, destination.y);
+    if (event.key == 'c') {
+        destination = view.center; // Center on current position
     }
-
     if (event.key == '+') {
-        zoomIn()
+        zoomIn();
     }
     if (event.key == '-') {
-        zoomOut()
+        zoomOut();
     }
+}
+
+function onKeyUp(event) {
+    // Mark keys as released
+    keysPressed[event.key] = false;
 }
 
 
@@ -255,5 +261,82 @@ function onKeyDown(event) {
 function convertCoordinateToSeed(x, y, seed) {
     var result = ((y*x ^ seed) ^ x)^y;
     return result
+}
+
+function getSeededRandom(seed) {
+    return new Math.seedrandom(seed);
+}
+
+//==============================================
+//=========    Infinite Map System     =========
+//============================================== 
+
+function getSectorCoords(worldX, worldY) {
+    return {
+        x: Math.floor(worldX / SECTOR_SIZE),
+        y: Math.floor(worldY / SECTOR_SIZE)
+    };
+}
+
+function getSectorKey(sectorX, sectorY) {
+    return sectorX + "," + sectorY;
+}
+
+function generateSector(sectorX, sectorY) {
+    var key = getSectorKey(sectorX, sectorY);
+    if (activeSectors[key]) {
+        return; // Already exists
+    }
+    
+    var worldX = sectorX * SECTOR_SIZE;
+    var worldY = sectorY * SECTOR_SIZE;
+    
+    var planetarySystem = new PlanetarySystem({
+        rectangle: new Rectangle(worldX, worldY, SECTOR_SIZE, SECTOR_SIZE),
+        randomGenerator: getSeededRandom(convertCoordinateToSeed(worldX, worldY, seed)),
+        showGrid: showGrid
+    });
+    planetarySystem.drawPlanets();
+    
+    activeSectors[key] = {
+        system: planetarySystem,
+        sectorX: sectorX,
+        sectorY: sectorY
+    };
+}
+
+function unloadDistantSectors(playerSectorX, playerSectorY) {
+    Object.keys(activeSectors).forEach(function(key) {
+        var sector = activeSectors[key];
+        var distance = Math.max(
+            Math.abs(sector.sectorX - playerSectorX),
+            Math.abs(sector.sectorY - playerSectorY)
+        );
+        
+        if (distance > UNLOAD_DISTANCE) {
+            // Remove all planets in this sector
+            sector.system.planets.forEach(function(planet) {
+                planet.remove();
+            });
+            if (sector.system.rect) {
+                sector.system.rect.remove();
+            }
+            delete activeSectors[key];
+        }
+    });
+}
+
+function updateVisibleSectors(playerWorldX, playerWorldY) {
+    var playerSector = getSectorCoords(playerWorldX, playerWorldY);
+    
+    // Generate sectors around player
+    for (var dx = -LOAD_DISTANCE; dx <= LOAD_DISTANCE; dx++) {
+        for (var dy = -LOAD_DISTANCE; dy <= LOAD_DISTANCE; dy++) {
+            generateSector(playerSector.x + dx, playerSector.y + dy);
+        }
+    }
+    
+    // Unload distant sectors
+    unloadDistantSectors(playerSector.x, playerSector.y);
 }
 
