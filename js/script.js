@@ -21,6 +21,7 @@ var REBASE_DISTANCE = 20000;  // move the origin when the ship is this far from 
 // The pilot decides where you start. ?pilot= and ?at=sx,sy override it.
 var pilot = getParameterByName('pilot') || loadPilot();
 var spawn = findSpawn(UNIVERSE, homeSector(UNIVERSE, pilot, getParameterByName('at')));
+paintStars(UNIVERSE);
 
 //==============================================
 //=========         Game state         =========

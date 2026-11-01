@@ -194,12 +194,51 @@ function loadPilot() {
 function loadBest() { try { return +localStorage.getItem('spacejam.best') || 0; } catch (e) { return 0; } }
 function saveBest(v) { try { localStorage.setItem('spacejam.best', v); } catch (e) {} }
 
-// ---- HUD and effects (DOM only) ----
-function setStarOffset(x, y) {
-    var far = (-x * 0.05 % 240) + 'px ' + (-y * 0.05 % 240) + 'px';
-    var near = (-x * 0.15 % 330) + 'px ' + (-y * 0.15 % 330) + 'px';
-    document.body.style.backgroundPosition = [far, far, far, near, near].join(',');
+// ---- Starfield (DOM background) ----
+// Three tiles painted from the universe seed. Each layer moves at its own speed (parallax).
+// Tile sizes have no common factor, so the repeats do not line up.
+var STAR_LAYERS = [
+    { size: 512, count: 110, maxR: 0.8, speed: 0.04 },
+    { size: 709, count: 50, maxR: 1.2, speed: 0.1 },
+    { size: 997, count: 22, maxR: 1.8, speed: 0.2 }
+];
+
+function paintStars(universe) {
+    var dpr = window.devicePixelRatio || 1;
+    var images = STAR_LAYERS.map(function (layer, i) {
+        var rnd = streamFor(universe, 'stars', i, 0);
+        var c = document.createElement('canvas');
+        c.width = c.height = Math.round(layer.size * dpr);
+        var g = c.getContext('2d');
+        g.scale(dpr, dpr);
+        for (var k = 0; k < layer.count; k++) {
+            var x = rnd() * layer.size, y = rnd() * layer.size;
+            var r = 0.3 + rnd() * layer.maxR;
+            var warm = rnd() < 0.25;
+            var hue = warm ? 20 + rnd() * 40 : 200 + rnd() * 40;
+            g.fillStyle = 'hsla(' + hue + ', 70%, ' + (80 + rnd() * 20) + '%, ' + (0.35 + rnd() * 0.65) + ')';
+            // Draw the wrapped copies too, so a star on a tile edge has no seam.
+            for (var ox = -1; ox <= 1; ox++) {
+                for (var oy = -1; oy <= 1; oy++) {
+                    g.beginPath();
+                    g.arc(x + ox * layer.size, y + oy * layer.size, r, 0, Math.PI * 2);
+                    g.fill();
+                }
+            }
+        }
+        return 'url(' + c.toDataURL() + ')';
+    });
+    document.body.style.backgroundImage = images.join(',');
+    document.body.style.backgroundSize = STAR_LAYERS.map(function (l) { return l.size + 'px ' + l.size + 'px'; }).join(',');
 }
+
+function setStarOffset(x, y) {
+    document.body.style.backgroundPosition = STAR_LAYERS.map(function (l) {
+        return (-x * l.speed % l.size) + 'px ' + (-y * l.speed % l.size) + 'px';
+    }).join(',');
+}
+
+// ---- HUD and effects (DOM only) ----
 function setText(id, text) {
     var el = document.getElementById(id);
     if (el.textContent !== text) el.textContent = text;
